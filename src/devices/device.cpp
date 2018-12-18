@@ -30,6 +30,10 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <iostream>
+#include <fstream>
+#include <cstdio>
+#include <vector>
 
 using namespace std;
 
@@ -52,7 +56,13 @@ using namespace std;
 #include "../report/report-data-html.h"
 #include "../measurement/measurement.h"
 #include "../devlist.h"
-#include <unistd.h>
+
+#define GNUPLOT_NAME "gnuplot -persist"
+
+int megaI = 0;
+
+double current_time = 0;
+std::vector<std::pair<double, double>> dots_to_draw;
 
 device::device(void)
 {
@@ -143,7 +153,33 @@ static bool power_device_sort(class device * i, class device * j)
 }
 
 
-void report_devices(void)
+
+void print_dot(int delta_t, double y, FILE * plot_pipe)
+{
+
+    if (plot_pipe != NULL) {
+
+    	current_time += delta_t;
+    	dots_to_draw.push_back(std::pair<double,double>(current_time,y));
+        ofstream myfile;
+        myfile.open ("plot.dat", std::ios_base::app);
+        myfile << current_time <<"\n";
+
+        for(auto && dot : dots_to_draw)
+		{
+			fprintf(plot_pipe, "plot '-' with linespoints linestyle 1\n");
+			fprintf(plot_pipe, "%f %f\n", dot.first, dot.second);
+		}
+
+
+        fprintf(plot_pipe, "%s\n", "e");
+        fflush(plot_pipe);
+    }
+
+
+}
+
+void report_devices(int delta_t, FILE * plot_pipe)
 {
 	WINDOW *win;
 	unsigned int i;
@@ -165,14 +201,24 @@ void report_devices(void)
 	sort(all_devices.begin(), all_devices.end(), power_device_sort);
 
 
-
 	pw = global_power();
 	if (pw > 0.0001) {
-		char buf[32];
+	    printf("charging mode");
+        ofstream myfile;
+        myfile.open ("kek.dat", std::ios_base::app);
+        myfile << "pw huger than 0.001\n";
+        char buf[32];
 		wprintw(win, _("The battery reports a discharge rate of %sW\n"),
 				fmt_prefix(pw, buf));
 		wprintw(win, _("The power consumed was %sJ\n"),
 				fmt_prefix(global_joules(), buf));
+
+		myfile << "Iteration i = " << megaI <<"pw = " << fmt_prefix(pw, buf)  << "\n";
+//		<< " J = " << fmt_prefix(global_joules(), buf) << "\n";
+		myfile.close();
+		if (plot_pipe != NULL)
+			print_dot(delta_t,pw, plot_pipe);
+        megaI +=1;
 	}
 
 	if (show_power) {
@@ -214,6 +260,13 @@ void report_devices(void)
 			util,
 			all_devices[i]->human_name()
 			);
+
+        ofstream myfile;
+        myfile.open ("win.dat", std::ios_base::app);
+        myfile << "poower" << power  << " util = " << util << " divece = " << all_devices[i]->human_name() << "\n";
+        myfile.close();
+//        megaI +=1;
+
 	}
 }
 
@@ -295,19 +348,14 @@ void show_report_devices(void)
 					(int)all_devices[i]->utilization(),
 					all_devices[i]->util_units());
 		}
-
 		P = all_devices[i]->power_usage(&all_results, &all_parameters);
 		format_watts(P, power, 11);
-
 		if (!show_power || !all_devices[i]->power_valid())
 			strcpy(power, "           ");
-
 		device_data[idx]= string(util);
 		idx+=1;
-
 		device_data[idx]= string(all_devices[i]->human_name());
 		idx+=1;
-
 		if (show_power) {
 			device_data[idx]= string(power);
 			idx+=1;

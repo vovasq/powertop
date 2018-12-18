@@ -67,9 +67,15 @@
 
 #define NR_OPEN_DEF 1024 * 1024
 
+#define GNUPLOT_NAME "gnuplot -persist > /dev/null 2>&1"
+
+
 int debug_learning = 0;
-unsigned time_out = 20;
+unsigned time_out = 5;
 int leave_powertop = 0;
+int draw_chart = 0;
+FILE *plot_pipe;
+
 void (*ui_notify_user) (const char *frmt, ...);
 
 enum {
@@ -86,7 +92,8 @@ static const struct option long_options[] =
 	{"csv",		optional_argument,	NULL,		 'C'},
 	{"debug",	no_argument,		&debug_learning, OPT_DEBUG},
 	{"extech",	optional_argument,	NULL,		 OPT_EXTECH},
-	{"html",	optional_argument,	NULL,		 'r'},
+    {"graphics",	no_argument,	NULL,		 'g'},
+    {"html",	optional_argument,	NULL,		 'r'},
 	{"iteration",	optional_argument,	NULL,		 'i'},
 	{"quiet",	no_argument,		NULL,		 'q'},
 	{"sample",	optional_argument,	NULL,		 's'},
@@ -124,6 +131,7 @@ static void print_usage()
 	printf(" -C, --csv%s\t %s\n", _("[=filename]"), _("generate a csv report"));
 	printf("     --debug\t\t %s\n", _("run in \"debug\" mode"));
 	printf("     --extech%s\t %s\n", _("[=devnode]"), _("uses an Extech Power Analyzer for measurements"));
+    printf(" -g, --graphics\t\t %s\n",_("showing real time chart of discharge rate"));
 	printf(" -r, --html%s\t %s\n", _("[=filename]"), _("generate a html report"));
 	printf(" -i, --iteration%s\n", _("[=iterations] number of times to run each test"));
 	printf(" -q, --quiet\t\t %s\n", _("suppress stderr output"));
@@ -212,6 +220,23 @@ extern "C" {
 	}
 }
 
+void init_chart()
+{
+    plot_pipe= popen(GNUPLOT_NAME, "w");
+
+    fprintf(plot_pipe, "set style line 1 \\\n"
+                  "linecolor rgb '#0060ad'\\\n"
+                  "linetype 1 linewidth 2\\\n"
+                  "pointtype 7 pointsize 1.5\n"
+                  //                  "set xrangexy\n");
+                  "set grid\n"
+                  "set xrange [0:150]\n"
+                  "set yrange [0:50]\n"
+                  "set title 'Discharging rate'\n"
+                  "set term wxt title 'PowerTOP %s'\n", PACKAGE_SHORT_VERSION);
+
+}
+
 void one_measurement(int seconds, int sample_interval, char *workload)
 {
 	create_all_usb_devices();
@@ -220,6 +245,8 @@ void one_measurement(int seconds, int sample_interval, char *workload)
 	start_devfreq_measurement();
 	start_process_measurement();
 	start_cpu_measurement();
+
+	int time_out = seconds;
 
 	if (workload && workload[0]) {
 		pthread_t thread = 0UL;
@@ -274,7 +301,7 @@ void one_measurement(int seconds, int sample_interval, char *workload)
 	show_report_devices();
 	report_show_open_devices();
 
-	report_devices();
+	report_devices(time_out, plot_pipe);
 	display_devfreq_devices();
 	report_devfreq_devices();
 	ahci_create_device_stats_table();
@@ -419,6 +446,8 @@ void clean_shutdown()
 	clear_all_devfreq();
 	clear_all_cpus();
 
+	if(plot_pipe)
+		pclose(plot_pipe);
 	return;
 }
 
@@ -441,7 +470,7 @@ int main(int argc, char **argv)
 #endif
 	ui_notify_user = ui_notify_user_ncurses;
 	while (1) { /* parse commandline options */
-		c = getopt_long(argc, argv, "cC::r::i:qt:w:Vh", long_options, &option_index);
+		c = getopt_long(argc, argv, "cC::g::r::i:qt:w:Vh", long_options, &option_index);
 		/* Detect the end of the options. */
 		if (c == -1)
 			break;
@@ -471,6 +500,10 @@ int main(int argc, char **argv)
 			checkroot();
 			extech_power_meter(optarg ? optarg : "/dev/ttyUSB0");
 			break;
+        case'g':
+            init_chart();
+            draw_chart = 1;
+            break;
 		case 'r':		/* html report */
 			reporttype = REPORT_HTML;
 			snprintf(filename, sizeof(filename), "%s", optarg ? optarg : "powertop.html");
@@ -553,7 +586,6 @@ int main(int argc, char **argv)
 	if (!auto_tune)
 		endwin();
 	fprintf(stderr, "%s\n", _("Leaving PowerTOP"));
-
 	end_process_data();
 	clear_process_data();
 	end_cpu_data();

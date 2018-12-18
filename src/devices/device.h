@@ -28,6 +28,8 @@
 
 #include <vector>
 #include <limits.h>
+#include <stdio.h>
+
 
 struct parameter_bundle;
 struct result_bundle;
@@ -76,7 +78,7 @@ extern vector<class device *> all_devices;
 extern void devices_start_measurement(void);
 extern void devices_end_measurement(void);
 extern void show_report_devices(void);
-extern void report_devices(void);
+extern void report_devices(int delta_t, FILE * plot_pipe);
 
 
 extern void create_all_devices(void);

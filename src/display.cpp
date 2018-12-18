@@ -24,6 +24,7 @@
  */
 #include "display.h"
 #include "lib.h"
+#include "../config.h"
 
 #include <ncurses.h>
 
